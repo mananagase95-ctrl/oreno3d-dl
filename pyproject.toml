@@ -1,0 +1,29 @@
+[project]
+name = "oreno3d-dl"
+version = "0.1.0"
+description = "从 oreno3d 视频页下载对应的 Iwara Source 画质文件"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx",
+    "beautifulsoup4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+oreno3d-dl = "oreno3d_dl.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
