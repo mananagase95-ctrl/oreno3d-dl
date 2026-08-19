@@ -31,9 +31,10 @@ export IWARA_PASSWORD="secret"
 
 ## 用法
 
-URL 文件一行一个地址。空行和 `#` 开头的注释会被忽略。
+可以直接把地址写在命令后面，也可以放进文本文件（一行一个）。空行和 `#` 开头的注释会被忽略。
 
 ```bash
+oreno3d-dl https://oreno3d.com/movies/329977
 oreno3d-dl urls.txt
 oreno3d-dl < urls.txt
 oreno3d-dl -o /path/to/out urls.txt
@@ -47,7 +48,7 @@ oreno3d-dl --force urls.txt
 默认：
 
 ```text
-./downloads/{作者}/{标题} [{iwaraID}].mp4
+./downloads/[作者]标题.mp4
 ```
 
-输出根目录可用 `-o` / `--output` 修改。已存在相同 iwara ID 的成品会打印 `已存在，跳过` 并跳过；`--force` 会重新下载。
+输出根目录可用 `-o` / `--output` 修改。同名成品会打印 `已存在，跳过` 并跳过；`--force` 会重新下载。

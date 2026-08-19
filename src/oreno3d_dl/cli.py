@@ -11,10 +11,10 @@ from oreno3d_dl import FatalError, ItemError
 from oreno3d_dl.config import CONFIG_PATH, load_credentials, login_interactive
 from oreno3d_dl.iwara import USER_AGENT, IwaraClient
 from oreno3d_dl.oreno3d import fetch_iwara_id, is_oreno3d_movie_url
-from oreno3d_dl.store import dest_path, download_with_resume, iter_existing, remove_stale
+from oreno3d_dl.store import dest_path, download_with_resume
 
 INVALID_URL_REASON = "不是有效的 oreno3d 视频地址"
-USAGE_HINT = "请提供 oreno3d 视频地址（文件或标准输入，一行一个）。"
+USAGE_HINT = "请提供 oreno3d 视频地址（命令行、文件或标准输入）。"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,9 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="从 oreno3d 视频页下载对应的 Iwara Source 画质文件。",
     )
     parser.add_argument(
-        "url_file",
-        nargs="?",
-        help="URL 列表文件；省略则从标准输入读取",
+        "inputs",
+        nargs="*",
+        help="oreno3d 地址，或包含地址的文本文件；省略则从标准输入读取",
     )
     parser.add_argument(
         "-o",
@@ -56,16 +56,37 @@ def parse_url_lines(text: str) -> list[str]:
     return urls
 
 
-def load_url_lines(url_file: str | None, *, stdin: TextIO | None = None) -> list[str]:
-    if url_file is not None:
+def looks_like_url(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith("http://") or lowered.startswith("https://")
+
+
+def load_url_lines(
+    inputs: list[str] | None,
+    *,
+    stdin: TextIO | None = None,
+) -> list[str]:
+    if not inputs:
+        stream = stdin if stdin is not None else sys.stdin
+        return parse_url_lines(stream.read())
+
+    urls: list[str] = []
+    for item in inputs:
+        if looks_like_url(item):
+            urls.append(item)
+            continue
+        path = Path(item)
+        if not path.is_file():
+            raise FatalError(f"找不到文件，也不是网址: {item}")
         try:
-            text = Path(url_file).read_text(encoding="utf-8")
+            urls.extend(parse_url_lines(path.read_text(encoding="utf-8")))
         except OSError as exc:
             raise FatalError(f"无法读取 URL 文件: {exc}") from exc
-    else:
-        stream = stdin if stdin is not None else sys.stdin
-        text = stream.read()
-    return parse_url_lines(text)
+    return urls
+
+
+def log(message: str) -> None:
+    print(message, flush=True)
 
 
 def process_one(
@@ -75,18 +96,21 @@ def process_one(
     output_root: Path,
     force: bool,
 ) -> str:
+    log("正在打开 oreno3d 页面...")
     iwara_id = fetch_iwara_id(http, url)
+    log(f"Iwara: https://www.iwara.tv/video/{iwara_id}")
+    log("正在获取视频信息...")
     meta = iwara.get_video(iwara_id)
-    old_paths = list(iter_existing(output_root, iwara_id))
-    if old_paths and not force:
-        print(f"已存在，跳过: {old_paths[0]}")
+    log(f"{meta.author} / {meta.title}")
+    dest = dest_path(output_root, meta.author, meta.title)
+    if dest.is_file() and not force:
+        log(f"已存在，跳过: {dest}")
         return "skip"
-    dest = dest_path(output_root, meta.author, meta.title, iwara_id)
+    log("正在获取 Source 地址...")
     source_url = iwara.get_source_url(meta.file_url)
+    log(f"开始下载 -> {dest}")
     download_with_resume(http, source_url, dest)
-    if force:
-        remove_stale(old_paths, dest)
-    print(f"下载完成: {dest}")
+    log(f"下载完成: {dest}")
     return "success"
 
 
@@ -104,7 +128,7 @@ def run(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        urls = load_url_lines(args.url_file)
+        urls = load_url_lines(args.inputs)
     except FatalError as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -134,14 +158,16 @@ def run(argv: list[str] | None = None) -> int:
             follow_redirects=True,
         ) as http:
             iwara = IwaraClient(http, credentials)
+            log("正在登录 Iwara...")
             iwara.ensure_ready()
+            log("登录成功")
 
             for url in urls:
-                print(url)
+                log(url)
                 if not is_oreno3d_movie_url(url):
                     failed += 1
                     failures.append((url, INVALID_URL_REASON))
-                    print(f"失败: {INVALID_URL_REASON}")
+                    log(f"失败: {INVALID_URL_REASON}")
                     continue
                 try:
                     result = process_one(
@@ -154,7 +180,7 @@ def run(argv: list[str] | None = None) -> int:
                 except ItemError as exc:
                     failed += 1
                     failures.append((url, exc.reason))
-                    print(f"失败: {exc.reason}")
+                    log(f"失败: {exc.reason}")
                     continue
                 if result == "skip":
                     skipped += 1
